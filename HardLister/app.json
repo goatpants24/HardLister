@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "HardLister",
+    "slug": "hardlister-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0f1117"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.hardlister.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "HardLister requires access to your camera to capture high-definition serial plates and physical gear diagnostics.",
+        "NSPhotoLibraryUsageDescription": "HardLister accesses your photo library to allow importing existing inventory verification images."
+      }
+    },
+    "android": {
+      "package": "com.hardlister.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.READ_MEDIA_IMAGES"
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+2026-05-16T00:48:10Z | HL-2026-001-002 | SECURITY_HARDENING | backend/apps-script-secure.js, src/services/sheetsSecure.ts | a1b5e9f8c4d2 | Hardened both sides of the network transport layer against script injection, cell corruption, and unauthorized data injection threats.

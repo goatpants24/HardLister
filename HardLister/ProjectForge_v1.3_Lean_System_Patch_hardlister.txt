@@ -1,0 +1,22 @@
+[Project]
+ID = HL-2026-001
+Sequence = 002
+Name = hardlister-hardening
+State = A
+Version = 1.3-Lean
+Sensitive = false
+Tagline = Defensive engineering audit and structural hardening patches for the HardLister core engine.
+
+[Provenance]
+Origin = Gemini-3-Flash
+Session_Date = 2026-05-16
+Parent_Blueprint = hardlister-app
+
+[Devil’s Advocate]
+Critique = Implementing asymmetric cryptographic signatures or structural schema layout validation blocks directly on the serverless Apps Script side checks client behavior perfectly, but it adds processing time to the execution runtime. If a large batch of item photos is synced concurrently, it could trigger Google Apps Script's strict 30-second execution time limit.
+
+[Files]
+manifest = MANIFEST.sha256
+log = project-log-entry.txt
+hardened_backend = backend/apps-script-secure.js
+hardened_service = src/services/sheetsSecure.ts

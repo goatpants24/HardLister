@@ -1,0 +1,1 @@
+[ATTACK SOURCE] [EXPLOIT VECTOR] [IMPACT CORE] Malicious client ───────> REST Endpoint Overload ─────────────> Corrupts Sheet Rows Intercepted payload ───> Folder ID Tampering ─────────────> Hijacks Media Streams Local Storage Leak ────> Device Extraction ─────────────> Exposes Cloud Auth tokens
