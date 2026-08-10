@@ -3,8 +3,8 @@
  * Enforces hard parameters for spec-driven durable inventory.
  */
 
-export type HardGoodsCategory = 'Tools' | 'Appliances' | 'Electronics' | 'Camera Gear';
-export type MechanicalCondition = 'NIB' | 'Open Box' | 'Excellent' | 'Good' | 'Fair' | 'Parts';
+export type HardGoodsCategory = string; // Allows dynamic "add+" extension categories
+export type MechanicalCondition = string; // Allows dynamic "add+" extension conditions
 export type AssetStatus = 'Available' | 'Sold' | 'Returned';
 
 export interface BaseHardGoodsItem {
@@ -21,6 +21,35 @@ export interface BaseHardGoodsItem {
   driveFolderId: string;      // Linked Google Drive binary file pointer
   inspectionNotes: string;    // Operational validation and fault ledger strings
   dateListed: string;         // ISO YYYY-MM-DD
+
+  // Photo checklist / URIs
+  photos: {
+    front?: string;
+    back?: string;
+    lSide?: string;
+    rSide?: string;
+    top?: string;
+    bottom?: string;
+    tagModel?: string;
+  };
+
+  // Pricing Research & Shipping / Logistics
+  researchNewPrice: number;
+  researchUsedPrice: number;
+  shippingWeight: string;     // e.g., "5 lbs 4 oz"
+  shippingDimensions: string; // e.g., "12x8x6 in"
+  descriptionVerbiage: string;
+
+  // Custom colon-separated terminology state segment tracking
+  // ITEM NAME:CONDITION:OPERATIONAL STATE:COMPONENT STATE:PACKAGING METHOD
+  stateItemName: string;
+  stateCondition: string;
+  stateOperationalState: string;
+  stateComponentState: string;
+  statePackagingMethod: string;
+  consolidatedStateString: string; // ITEM NAME:CONDITION:...
+  numericStateCode: string;        // Numeric abbreviation mapping e.g., "1:2:1:0:1"
+  noReturnsPolicy: boolean;
 }
 
 export interface ToolsExtension {
