@@ -2,14 +2,14 @@
  * HardLister Polymorphic Form Interface Router
  * Highly optimized, specification-driven assets and gear validation with interactive photo slots,
  * dynamic terminology state routing, AI research services, and easy CSV/Markdown manifest export.
- *
+ * 
  * Enhanced with interface innovations gleaned from TruCatLog (Conky Variant):
  * - Undo/Redo history stack management via `useUndoRedo` and `UndoRedoBar`
  * - Top Quick Actions Toolbar with `✓ Captured` visual indicators
  * - Soft keyboard ref focus chaining (`onSubmitEditing` -> `nextRef.focus()`)
  * - Live character counter warnings (yellow/red thresholds) & required field validation
  * - Instant market research shortcuts (eBay Sold Comps & Google Label Search)
- */
+ * */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
 import {
@@ -29,6 +29,8 @@ import {
 import { HardGoodsCategory, HardGoodsItem } from '../types/hardgoods';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import UndoRedoBar from './UndoRedoBar';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadPhotoAndCommit, secureDispatchToCloud } from '../services/sheetsSecure';
 
 // Seed lists for consistent terminology dropdown options
 const INITIAL_CONDITIONS = ['New', 'Used', 'Damaged'];
@@ -66,7 +68,7 @@ const INITIAL_ITEM = (): Partial<HardGoodsItem> => ({
   saleStatus: 'Available',
   listedPrice: 0,
   marketplace: 'eBay',
-  driveFolderId: 'HL-DRIVE-' + Math.floor(1000 + Math.random() * 9000),
+  driveFolderId: '',
   inspectionNotes: '',
   dateListed: new Date().toISOString().split('T')[0],
 
@@ -91,10 +93,6 @@ const INITIAL_ITEM = (): Partial<HardGoodsItem> => ({
   noReturnsPolicy: false
 });
 
-/**
- * QuickActionsBar
- * Top shortcut grid for quick photo slot captures with visual completed badges.
- */
 const QuickActionsBar = memo(({
   photos,
   onCapture
@@ -131,14 +129,12 @@ const QuickActionsBar = memo(({
 export default function DynamicFormRouter() {
   const [selectedCategory, setSelectedCategory] = useState<HardGoodsCategory>('Camera Gear');
 
-  // Input Refs for soft keyboard focus chaining
   const brandRef = useRef<TextInput>(null);
   const modelRef = useRef<TextInput>(null);
   const serialRef = useRef<TextInput>(null);
   const priceRef = useRef<TextInput>(null);
   const notesRef = useRef<TextInput>(null);
 
-  // Undo/Redo State Engine (Gleaned from TruCatLog)
   const initialFormState = useMemo(() => INITIAL_ITEM(), []);
   const {
     value: formData,
@@ -150,28 +146,21 @@ export default function DynamicFormRouter() {
     historyLength,
   } = useUndoRedo<Partial<HardGoodsItem>>(initialFormState);
 
-  // Dynamic lists with Add+ custom additions
   const [categories, setCategories] = useState<string[]>(['Tools', 'Appliances', 'Electronics', 'Camera Gear']);
   const [conditions, setConditions] = useState<string[]>(INITIAL_CONDITIONS);
   const [operationalStates, setOperationalStates] = useState<string[]>(INITIAL_OPERATIONAL_STATES);
   const [componentStates, setComponentStates] = useState<string[]>(INITIAL_COMPONENT_STATES);
   const [packagingMethods, setPackagingMethods] = useState<string[]>(INITIAL_PACKAGING_METHODS);
 
-  // Dynamic Add+ custom input values
   const [newCategoryVal, setNewCategoryVal] = useState('');
   const [newConditionVal, setNewConditionVal] = useState('');
   const [newOpStateVal, setNewOpStateVal] = useState('');
   const [newCompStateVal, setNewCompStateVal] = useState('');
   const [newPkgMethodVal, setNewPkgMethodVal] = useState('');
 
-  // AI research state
   const [aiLoading, setAiLoading] = useState(false);
   const [aiData, setAiData] = useState<any>(null);
-
-  // High contrast visual toggle for Tag/Model Photo
   const [tagPhotoHighContrast, setTagPhotoHighContrast] = useState(false);
-
-  // Notification banner state
   const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
   const showBanner = (msg: string) => {
@@ -195,13 +184,11 @@ export default function DynamicFormRouter() {
   const isTitleValid = !!(formData.title && formData.title.trim().length > 0);
   const isSerialValid = !!(formData.serialNumber && formData.serialNumber.trim().length > 0);
 
-  // 1. Build Numeric Abbreviation Map Indexing
   const getIndexCode = (val: string, list: string[]): number => {
     const idx = list.indexOf(val);
     return idx !== -1 ? idx + 1 : list.length + 1;
   };
 
-  // 2. Automatically compute and update state combinations & returns policies
   useEffect(() => {
     const itemName = formData.stateItemName || formData.title || formData.modelNumber || 'UNKNOWN-ITEM';
     const cond = formData.stateCondition || 'Used';
@@ -249,7 +236,6 @@ export default function DynamicFormRouter() {
     setFormData
   ]);
 
-  // Photo Naming Convention
   const getPhotoFilename = useCallback((slotName: string) => {
     const cleanItemName = (formData.stateItemName || formData.title || formData.modelNumber || 'ITEM')
       .replace(/[^a-zA-Z0-9]/g, '-');
@@ -257,7 +243,6 @@ export default function DynamicFormRouter() {
     return `${cleanItemName}_${cleanCond}_${slotName}.jpg`.toLowerCase();
   }, [formData.stateItemName, formData.title, formData.modelNumber, formData.stateCondition]);
 
-  // Market & Brand Research Handlers (Gleaned from TruCatLog)
   const handleMarketResearch = useCallback(() => {
     const query = [formData.brand, formData.title || formData.modelNumber, selectedCategory]
       .filter(Boolean)
@@ -278,14 +263,13 @@ export default function DynamicFormRouter() {
     Linking.openURL(`https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch`);
   }, [formData.brand, formData.modelNumber]);
 
-  // Add Custom Options "add+" Actions
   const addNewCategory = () => {
     if (newCategoryVal.trim() && !categories.includes(newCategoryVal.trim())) {
       setCategories([...categories, newCategoryVal.trim()]);
       setSelectedCategory(newCategoryVal.trim());
       updateField('primaryCategory', newCategoryVal.trim(), true);
       setNewCategoryVal('');
-      showBanner(`Added new category: "${newCategoryVal.trim()}"`);
+      showBanner(`Added new category: \"${newCategoryVal.trim()}\"`);
     }
   };
 
@@ -294,7 +278,7 @@ export default function DynamicFormRouter() {
       setConditions([...conditions, newConditionVal.trim()]);
       updateField('stateCondition', newConditionVal.trim(), true);
       setNewConditionVal('');
-      showBanner(`Added custom condition: "${newConditionVal.trim()}"`);
+      showBanner(`Added custom condition: \"${newConditionVal.trim()}\"`);
     }
   };
 
@@ -303,7 +287,7 @@ export default function DynamicFormRouter() {
       setOperationalStates([...operationalStates, newOpStateVal.trim()]);
       updateField('stateOperationalState', newOpStateVal.trim(), true);
       setNewOpStateVal('');
-      showBanner(`Added custom operational state: "${newOpStateVal.trim()}"`);
+      showBanner(`Added custom operational state: \"${newOpStateVal.trim()}\"`);
     }
   };
 
@@ -312,7 +296,7 @@ export default function DynamicFormRouter() {
       setComponentStates([...componentStates, newCompStateVal.trim()]);
       updateField('stateComponentState', newCompStateVal.trim(), true);
       setNewCompStateVal('');
-      showBanner(`Added custom component state: "${newCompStateVal.trim()}"`);
+      showBanner(`Added custom component state: \"${newCompStateVal.trim()}\"`);
     }
   };
 
@@ -321,11 +305,10 @@ export default function DynamicFormRouter() {
       setPackagingMethods([...packagingMethods, newPkgMethodVal.trim()]);
       updateField('statePackagingMethod', newPkgMethodVal.trim(), true);
       setNewPkgMethodVal('');
-      showBanner(`Added custom packaging method: "${newPkgMethodVal.trim()}"`);
+      showBanner(`Added custom packaging method: \"${newPkgMethodVal.trim()}\"`);
     }
   };
 
-  // AI Pricing Assistant
   const triggerAiScan = () => {
     if (!formData.modelNumber || !formData.brand) {
       showBanner('Error: Please input a Brand and Model/Part Number first!');
@@ -342,29 +325,29 @@ export default function DynamicFormRouter() {
       let estUsed = 320;
       let estWeight = '3 lbs 2 oz';
       let estDims = '10 x 7 x 4 inches';
-      let bulletSpecs = `- Brand Authentic standard ${brand} specification\n- Serial verified physical architecture`;
+      let bulletSpecs = `- Brand Authentic standard ${brand} specification\\n- Serial verified physical architecture`;
 
       if (category === 'Camera Gear') {
         estNew = 1299;
         estUsed = 850;
         estWeight = '1 lb 12 oz';
         estDims = '6 x 4 x 4 inches';
-        bulletSpecs = `- Premium High-Precision Optical Element\n- Native mount alignment with ${model} configuration\n- Dust-sealed chassis structure`;
+        bulletSpecs = `- Premium High-Precision Optical Element\\n- Native mount alignment with ${model} configuration\\n- Dust-sealed chassis structure`;
       } else if (category === 'Electronics') {
         estNew = 999;
         estUsed = 620;
         estWeight = '2 lbs 14 oz';
         estDims = '12.5 x 8.8 x 0.6 inches';
-        bulletSpecs = `- Solid-state storage acceleration architecture\n- Maximum operational processing cycles\n- Activation unlocked and verified clean`;
+        bulletSpecs = `- Solid-state storage acceleration architecture\\n- Maximum operational processing cycles\\n- Activation unlocked and verified clean`;
       } else if (category === 'Tools') {
         estNew = 229;
         estUsed = 140;
         estWeight = '6 lbs 8 oz';
         estDims = '14 x 9 x 5 inches';
-        bulletSpecs = `- Heavy-duty industrial torque rating\n- Universal battery ecosystem interoperable\n- Shock-absorbent safety grip casing`;
+        bulletSpecs = `- Heavy-duty industrial torque rating\\n- Universal battery ecosystem interoperable\\n- Shock-absorbent safety grip casing`;
       }
 
-      const generatedVerbiage = `PROPOSED LISTING DESCRIPTION:\n=================================\n\nIntroducing the ${brand} ${model} in ${formData.stateCondition || 'Used'} condition.\n\nTECHNICAL SPECS:\n${bulletSpecs}\n\nThis item has been fully serial-authenticated and inspected. Ready for rapid dispatch. Packaged meticulously inside: ${formData.statePackagingMethod}.`;
+      const generatedVerbiage = `PROPOSED LISTING DESCRIPTION:\\n=================================\\n\\nIntroducing the ${brand} ${model} in ${formData.stateCondition || 'Used'} condition.\\n\\nTECHNICAL SPECS:\\n${bulletSpecs}\\n\\nThis item has been fully serial-authenticated and inspected. Ready for rapid dispatch. Packaged meticulously inside: ${formData.statePackagingMethod}.`;
 
       setAiData({
         newPrice: estNew,
@@ -392,52 +375,88 @@ export default function DynamicFormRouter() {
     }
   };
 
-  // Quick action toolbar capture trigger
-  const handleQuickCapture = useCallback((slotKey: PhotoSlotKey) => {
-    if (formData.photos?.[slotKey]) {
-      // Toggle off if already captured
-      updatePhoto(slotKey, undefined);
-      showBanner(`Removed ${slotKey} photo.`);
-    } else {
-      updatePhoto(slotKey, `file://hardlister/simulated_cam_${slotKey}.jpg`);
-      showBanner(`Attached simulated photo for ${slotKey}.`);
-    }
-  }, [formData.photos, updatePhoto]);
+  const handleQuickCapture = useCallback(async (slotKey: PhotoSlotKey) => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.status !== 'granted') {
+        showBanner('Permission to access photos was denied.');
+        return;
+      }
 
-  // Export Manifest Strings (CSV & Markdown formats)
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.7,
+      });
+
+      if (result.canceled) return;
+
+      const selectedUri = result.assets[0].uri;
+      
+      showBanner(`Uploading ${slotKey} photo...`);
+      
+      const tempItem: Partial<HardGoodsItem> = {
+        itemNumber: formData.itemNumber || 'TEMP',
+        title: formData.title || 'TEMP',
+        brand: formData.brand || 'TEMP',
+        modelNumber: formData.modelNumber || 'TEMP',
+        serialNumber: formData.serialNumber || 'TEMP',
+        condition: formData.condition || 'Used',
+        saleStatus: formData.saleStatus || 'Available',
+        listedPrice: formData.listedPrice || 0,
+        marketplace: formData.marketplace || 'eBay',
+        inspectionNotes: formData.inspectionNotes || '',
+        dateListed: formData.dateListed || new Date().toISOString().split('T')[0]
+      };
+
+      const uploadResult = await uploadPhotoAndCommit(tempItem as HardGoodsItem, selectedUri);
+
+      if (uploadResult.success) {
+        updatePhoto(slotKey, selectedUri);
+        setFormData(prev => ({ ...prev, driveFolderId: uploadResult.rowId.toString() })); 
+        showBanner(`✅ ${slotKey} photo uploaded!`);
+      } else {
+        showBanner(`❌ Upload failed: ${uploadResult.error}`);
+      }
+    } catch (err) {
+      showBanner(`Unexpected error during capture: ${err instanceof Error ? err.message : 'Unknown'}`);
+    }
+  }, [formData, updatePhoto, showBanner]);
+
   const markdownManifest = useMemo(() => {
     return `
 # HardLister Gear Manifest: ${formData.title || 'Untitled Listing'}
 
 ## Universal Manifest Identity
-- **SKU/Item Number:** ${formData.itemNumber}
-- **Brand:** ${formData.brand || 'N/A'}
-- **Model / Part Number:** ${formData.modelNumber || 'N/A'}
-- **Serial Number:** ${formData.serialNumber || 'N/A'}
-- **Category:** ${selectedCategory}
-- **Marketplace Destination:** ${formData.marketplace}
-- **Target Listed Price:** $${formData.listedPrice}
-- **Date Audited:** ${formData.dateListed}
+|- **SKU/Item Number:** ${formData.itemNumber}
+|- **Brand:** ${formData.brand || 'N/A'}
+|- **Model / Part Number:** ${formData.modelNumber || 'N/A'}
+|- **Serial Number:** ${formData.serialNumber || 'N/A'}
+|- **Category:** ${selectedCategory}
+|- **Marketplace Destination:** ${formData.marketplace}
+|- **Target Listed Price:** $${formData.listedPrice}
+|- **Date Audited:** ${formData.dateListed}
 
 ## Condition & Logistical Verification State
-- **State Terminal String:** \`${formData.consolidatedStateString}\`
-- **Abbreviated Numeric Code:** \`${formData.numericStateCode}\`
-- **Returns Status Allowed:** ${formData.noReturnsPolicy ? '❌ NO RETURNS PERMITTED (Damaged / Parts)' : '✅ Standard Returns Allowed'}
+|- **State Terminal String:** \`${formData.consolidatedStateString}\`
+|- **Abbreviated Numeric Code:** \`${formData.numericStateCode}\`
+|- **Returns Status Allowed:** ${formData.noReturnsPolicy ? '❌ NO RETURNS PERMITTED (Damaged / Parts)' : '✅ Standard Returns Allowed'}
 
 ## Interactive Assets Naming Convention Matrix
-- **Front Photo:** \`${formData.photos?.front ? getPhotoFilename('front') : 'Missing'}\`
-- **Back Photo:** \`${formData.photos?.back ? getPhotoFilename('back') : 'Missing'}\`
-- **Left Side Photo:** \`${formData.photos?.lSide ? getPhotoFilename('l-side') : 'Not Taken'}\`
-- **Right Side Photo:** \`${formData.photos?.rSide ? getPhotoFilename('r-side') : 'Not Taken'}\`
-- **Top Photo:** \`${formData.photos?.top ? getPhotoFilename('top') : 'Not Taken'}\`
-- **Bottom Photo:** \`${formData.photos?.bottom ? getPhotoFilename('bottom') : 'Not Taken'}\`
-- **Tag/Model Plate (Contrast Adjusted):** \`${formData.photos?.tagModel ? getPhotoFilename('tag-model') : 'Missing'}\`
+|- **Front Photo:** \`${formData.photos?.front ? getPhotoFilename('front') : 'Missing'}\`
+|- **Back Photo:** \`${formData.photos?.back ? getPhotoFilename('back') : 'Missing'}\`
+|- **Left Side Photo:** \`${formData.photos?.lSide ? getPhotoFilename('l-side') : 'Not Taken'}\`
+|- **Right Side Photo:** \`${formData.photos?.rSide ? getPhotoFilename('r-side') : 'Not Taken'}\`
+|- **Top Photo:** \`${formData.photos?.top ? getPhotoFilename('top') : 'Not Taken'}\`
+|- **Bottom Photo:** \`${formData.photos?.bottom ? getPhotoFilename('bottom') : 'Not Taken'}\`
+|- **Tag/Model Plate (Contrast Adjusted):** \`${formData.photos?.tagModel ? getPhotoFilename('tag-model') : 'Missing'}\`
 
 ## Pricing & Shipping Logistics Research
-- **Research Estimated New Price:** $${formData.researchNewPrice}
-- **Research Estimated Used Price:** $${formData.researchUsedPrice}
-- **Shipping Weight Block:** ${formData.shippingWeight || 'N/A'}
-- **Shipping Dimensions Package Block:** ${formData.shippingDimensions || 'N/A'}
+|- **Research Estimated New Price:** $${formData.researchNewPrice}
+|- **Research Estimated Used Price:** $${formData.researchUsedPrice}
+|- **Shipping Weight Block:** ${formData.shippingWeight || 'N/A'}
+|- **Shipping Dimensions Package Block:** ${formData.shippingDimensions || 'N/A'}
 
 ## Copy/Paste Description Verbiage
 \`\`\`
@@ -530,7 +549,6 @@ ${formData.descriptionVerbiage || 'No description written.'}
         {/* Universal Base Form Info */}
         <View style={styles.card}>
           <Text style={styles.sectionHeader}>Universal Identity Info</Text>
-
           <Text style={styles.label}>Manifest Item # / SKU</Text>
           <TextInput
             style={styles.input}
@@ -603,7 +621,6 @@ ${formData.descriptionVerbiage || 'No description written.'}
                 </Text>
               </View>
             </View>
-
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Model / Part *</Text>
               <TextInput
@@ -996,7 +1013,6 @@ ${formData.descriptionVerbiage || 'No description written.'}
                 onChangeText={(val) => updateField('listedPrice', parseFloat(val) || 0)}
               />
             </View>
-
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>Researched New Price ($)</Text>
               <TextInput
@@ -1015,7 +1031,7 @@ ${formData.descriptionVerbiage || 'No description written.'}
               <Text style={styles.label}>Est Shipping Weight</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g., 4 lbs 12 oz"
+                placeholder="e. e.g., 4 lbs 12 oz"
                 placeholderTextColor="#4b5563"
                 value={formData.shippingWeight || ''}
                 onChangeText={(val) => updateField('shippingWeight', val)}
@@ -1091,7 +1107,6 @@ ${formData.descriptionVerbiage || 'No description written.'}
           <Text style={styles.helperText}>
             Transfer listing info seamlessly to high-speed spreadsheet rows or Markdown platforms.
           </Text>
-
           <View style={styles.row}>
             <TouchableOpacity style={[styles.exportBtn, { backgroundColor: '#10b981' }]} onPress={shareMarkdown}>
               <Text style={styles.exportBtnText}>Share Markdown (.MD)</Text>
@@ -1100,7 +1115,6 @@ ${formData.descriptionVerbiage || 'No description written.'}
               <Text style={styles.exportBtnText}>Share Tabular CSV (.CSV)</Text>
             </TouchableOpacity>
           </View>
-
           <Text style={styles.label}>Copy Preview Box (Markdown / Details):</Text>
           <TextInput
             style={[styles.input, { height: 180, fontSize: 11, fontFamily: 'monospace', backgroundColor: '#090a0f', color: '#a5b4fc' }]}
@@ -1109,9 +1123,34 @@ ${formData.descriptionVerbiage || 'No description written.'}
             value={markdownManifest}
           />
         </View>
+
+        {/* FINAL SYNC SECTION */}
+        <View style={[styles.card, { marginTop: 24, marginBottom: 24, backgroundColor: '#1e293b', borderColor: '#38bdf8', borderWidth: 2 }]}>
+          <Text style={[styles.sectionHeader, { color: '#38bdf8' }]}>🚀 Final Manifest Submission</Text>
+          <Text style={styles.helperText}>
+            Once all photos are captured and data is verified, commit the entire record to the secure Google Cloud backend.
+          </Text>
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: '#0ea5e9', height: 56, marginTop: 10 }]}
+            onPress={async () => {
+              if (!formData.title || !formData.itemNumber) {
+                showBanner('⚠️ Error: Item Number and Title are required for sync.');
+                return;
+              }
+              showBanner('Synchronizing with Google Cloud...');
+              const syncResult = await secureDispatchToCloud(formData as HardGoodsItem);
+              if (syncResult.success) {
+                showBanner('✅ SUCCESS: Manifest committed to Google Cloud!');
+              } else {
+                showBanner(`❌ SYNC ERROR: ${syncResult.error}`);
+              }
+            }}
+          >
+            <Text style={styles.actionButtonText}>COMMIT FULL MANIFEST TO CLOUD</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
-      {/* Floating Sticky Undo/Redo History Bar (Gleaned from TruCatLog) */}
       <UndoRedoBar
         canUndo={canUndo}
         canRedo={canRedo}
@@ -1121,100 +1160,4 @@ ${formData.descriptionVerbiage || 'No description written.'}
       />
     </KeyboardAvoidingView>
   );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f1117' },
-  content: { padding: 16 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#e8eaf6', marginBottom: 12, textAlign: 'center' },
-  card: { backgroundColor: '#1a1d27', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#2a2d3a' },
-  label: { color: '#94a3b8', fontSize: 13, marginBottom: 4, marginTop: 10, fontWeight: '600' },
-  labelHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 4 },
-  fieldHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
-  fieldFooterRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  researchLinkText: { color: '#60a5fa', fontSize: 11, fontWeight: '600' },
-  validationErrorText: { color: '#f87171', fontSize: 11, fontWeight: '500' },
-  charCountText: { color: '#94a3b8', fontSize: 11, fontWeight: '500' },
-  helperText: { color: '#64748b', fontSize: 11, marginBottom: 8, lineHeight: 14 },
-  input: { backgroundColor: '#0f1117', color: '#e8eaf6', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#2a2d3a', fontSize: 13 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-
-  // Quick Actions Grid (Gleaned from TruCatLog)
-  quickActionsContainer: { marginBottom: 14, backgroundColor: '#12141c', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b' },
-  quickActionsHeaderLabel: { color: '#818cf8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
-  quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  quickActionButton: { flex: 1, minWidth: '22%', backgroundColor: '#1a1d27', borderWidth: 1, borderColor: '#2a2d3a', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 6, alignItems: 'center', gap: 2 },
-  quickActionButtonCaptured: { borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)' },
-  quickActionIcon: { fontSize: 16 },
-  quickActionLabel: { color: '#cbd5e1', fontSize: 10, fontWeight: '600' },
-  quickActionLabelCaptured: { color: '#34d399', fontWeight: '700' },
-
-  categoryBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6, marginBottom: 8 },
-  categoryBadge: { backgroundColor: '#111420', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#1e293b' },
-  categoryBadgeSelected: { backgroundColor: '#4f6ef7', borderColor: '#6366f1' },
-  categoryBadgeText: { color: '#94a3b8', fontSize: 12, fontWeight: '500' },
-  categoryBadgeTextSelected: { color: '#ffffff', fontWeight: '700' },
-
-  addCustomOptionRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, marginBottom: 10 },
-  addCustomBtn: { backgroundColor: '#3b82f6', height: 38, width: 60, borderRadius: 8, justifyContent: 'center', alignItems: 'center' },
-  addCustomBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  customPickerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  pickerOption: { backgroundColor: '#111420', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#1e293b' },
-  pickerOptionSelected: { backgroundColor: '#f59e0b', borderColor: '#f59e0b' },
-  pickerOptionText: { color: '#94a3b8', fontSize: 11 },
-  pickerOptionTextSelected: { color: '#000000', fontWeight: '700' },
-
-  outputBox: { backgroundColor: '#10121a', padding: 12, borderRadius: 8, marginTop: 14, borderWidth: 1, borderColor: '#1e293b' },
-  outputLabel: { color: '#a855f7', fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
-  outputText: { color: '#e8eaf6', fontSize: 12, fontWeight: '700', marginTop: 2, fontFamily: 'monospace' },
-  legendText: { color: '#64748b', fontSize: 10, marginTop: 4, lineHeight: 12 },
-
-  noReturnBanner: { backgroundColor: '#450a0a', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#7f1d1d', marginTop: 12 },
-  noReturnBannerTitle: { color: '#f87171', fontWeight: '800', fontSize: 12, marginBottom: 2 },
-  noReturnBannerBody: { color: '#fca5a5', fontSize: 11, lineHeight: 14 },
-
-  bannerContainer: { backgroundColor: '#3b82f6', padding: 10, borderRadius: 8, marginBottom: 12, borderWidth: 1, borderColor: '#2563eb' },
-  bannerText: { color: '#fff', fontSize: 12, fontWeight: '700', textAlign: 'center' },
-
-  // Interactive Photo UI
-  photoSlotCard: { backgroundColor: '#12141c', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#1e293b', marginTop: 10 },
-  photoSlotHeader: { marginBottom: 6 },
-  photoSlotLabel: { color: '#cbd5e1', fontSize: 12, fontWeight: '700' },
-  photoSlotDesc: { color: '#64748b', fontSize: 10, marginTop: 1 },
-  checkIcon: { color: '#10b981', fontSize: 11, fontWeight: '700', marginLeft: 'auto' },
-
-  highContrastControls: { backgroundColor: '#090a0f', padding: 8, borderRadius: 6, marginVertical: 6, borderWidth: 1, borderColor: '#0ea5e9' },
-  contrastBtn: { backgroundColor: '#1e293b', paddingVertical: 6, borderRadius: 4, alignItems: 'center' },
-  contrastBtnActive: { backgroundColor: '#0284c7' },
-  contrastBtnText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-
-  photoPreviewBox: { backgroundColor: '#1e293b', padding: 10, borderRadius: 6, alignItems: 'center', marginTop: 4 },
-  highContrastPreview: { borderColor: '#38bdf8', borderWidth: 2, backgroundColor: '#0f172a' },
-  photoUriText: { color: '#f1f5f9', fontSize: 10, fontFamily: 'monospace', marginBottom: 6 },
-  removePhotoBtn: { backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 4 },
-  removePhotoBtnText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-
-  photoPlaceholderBox: { backgroundColor: '#090a0f', padding: 10, borderRadius: 6, alignItems: 'center', marginTop: 4 },
-  photoPlaceholderText: { color: '#475569', fontSize: 11, marginBottom: 8 },
-  photoActionBtn: { backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6, marginRight: 6 },
-  photoActionBtnText: { color: '#fff', fontSize: 10, fontWeight: '700' },
-
-  // AI Spec Scan Result UI
-  aiResultContainer: { backgroundColor: '#0f172a', padding: 12, borderRadius: 8, marginTop: 12, borderWidth: 1, borderColor: '#334155' },
-  aiHeader: { color: '#38bdf8', fontSize: 11, fontWeight: '800', marginBottom: 6 },
-  aiLabel: { color: '#94a3b8', fontSize: 10, marginTop: 6 },
-  aiValue: { color: '#e2e8f0', fontSize: 14, fontWeight: '700' },
-  aiDescriptionText: { color: '#cbd5e1', fontSize: 11, backgroundColor: '#020617', padding: 8, borderRadius: 6, marginTop: 4, fontFamily: 'monospace' },
-  loadAiBtn: { backgroundColor: '#10b981', paddingVertical: 10, borderRadius: 6, alignItems: 'center', marginTop: 10 },
-  loadAiBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  actionButton: { padding: 12, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  actionButtonText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-
-  exportBtn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center', marginHorizontal: 4 },
-  exportBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  sectionContainer: { marginTop: 16, padding: 16, backgroundColor: '#131622', borderRadius: 12, borderWidth: 1, borderColor: '#1e293b' },
-  sectionHeader: { color: '#4f6ef7', fontWeight: '800', fontSize: 14, marginBottom: 4 }
-});
+};
