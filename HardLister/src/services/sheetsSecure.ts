@@ -19,6 +19,9 @@ export async function secureDispatchToCloud(item: HardGoodsItem) {
       return { success: false, error: 'Target destination network link is unconfigured.' };
     }
 
+    // Append the token as a query parameter for hardening
+    const urlWithToken = `${targetEndpointUrl.trim()}?token=${SHARED_SECRET_KEY}`;
+
     // Construct flat-row array sequentially matching the server schema order
     const sequentialRowData = [
       item.itemNumber,
@@ -30,17 +33,16 @@ export async function secureDispatchToCloud(item: HardGoodsItem) {
       item.saleStatus,
       item.listedPrice, // Index 7 (Validated strictly by backend engine)
       item.marketplace,
-      item.driveFolderId, // If this is empty, skip Stage 1
+      item.driveFolderId,
       item.inspectionNotes,
       item.dateListed
     ];
 
-    const response = await fetch(targetEndpointUrl.trim(), {
+    const response = await fetch(urlWithToken, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'append',
-        secretToken: SHARED_SECRET_KEY, // Verification handshake check
         data: sequentialRowData
       })
     });
@@ -60,7 +62,7 @@ export async function secureDispatchToCloud(item: HardGoodsItem) {
 
 /**
  * Stage 1 + Stage 2: Dual-Stage Photo Integration.
- * 1. Uploads the image using FormData (Multipart).
+ * 1. Uploads the image using Binary Stream (no multipart bloat).
  * 2. Uses the returned fileId to perform the final metadata append.
  * 
  * @param item The item record to save.
@@ -73,25 +75,20 @@ export async function uploadPhotoAndCommit(item: HardGoodsItem, imageUri: string
       return { success: false, error: 'Target destination network link is unconfigured.' };
     }
 
-    // --- STAGE 1: Multipart Photo Upload ---
-    const formData = new FormData();
-    // @ts-ignore - React Native FormData requirements
-    formData.append('file', {
-      uri: imageUri,
-      name: `upload_${Date.now()}.jpg`,
-      type: 'image/jpeg',
-    });
-    formData.append('secretToken', SHARED_SECRET_KEY);
-    formData.append('action', 'upload_photo');
+    // --- STAGE 1: BINARY PHOTO UPLOAD (Hardened) ---
+    // We append the token to the URL to allow a pure binary body POST.
+    const uploadUrlWithToken = `${targetEndpointUrl.trim()}?token=${SHARED_SECRET_KEY}`;
 
-    const uploadResponse = await fetch(targetEndpointUrl.trim(), {
+    // In React Native, fetching a local file URI as a blob requires a file system read.
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    const uploadResponse = await fetch(uploadUrlWithToken, {
       method: 'POST',
-      body: formData,
       headers: {
-        'Accept': 'application/json',
-        // Note: Do NOT set 'Content-Type' manually when using FormData; 
-        // fetch will automatically set it with the correct boundary.
+        'Content-Type': 'image/jpeg', // Inform server of type
       },
+      body: blob,
     } as any);
 
     const uploadResult = await uploadResponse.json();
@@ -103,7 +100,7 @@ export async function uploadPhotoAndCommit(item: HardGoodsItem, imageUri: string
       };
     }
 
-    // --- STAGE 2: Metadata Append with the new File ID ---
+    // --- STAGE 2: METADATA APPEND ---
     const fileId = uploadResult.fileId;
     
     // Update the item locally with the new driveFolderId before dispatching
