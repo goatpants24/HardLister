@@ -3,12 +3,10 @@
  * Highly optimized, specification-driven assets and gear validation with interactive photo slots,
  * dynamic terminology state routing, AI research services, and easy CSV/Markdown manifest export.
  *
- * Enhanced with interface innovations gleaned from TruCatLog (Conky Variant):
- * - Undo/Redo history stack management via `useUndoRedo` and `UndoRedoBar`
- * - Top Quick Actions Toolbar with `✓ Captured` visual indicators
- * - Soft keyboard ref focus chaining (`onSubmitEditing` -> `nextRef.focus()`)
- * - Live character counter warnings (yellow/red thresholds) & required field validation
- * - Instant market research shortcuts (eBay Sold Comps & Google Label Search)
+ * Integrated with Image Ingestion Pipeline & Role Pipeline:
+ * - Shooter Role View: Hands-free vocal dictation for hardware specs & rapid photo capture
+ * - Monitor Role View: Audit queue dashboard & high-contrast serial tag photo inspector
+ * - Form View: PARITY interface with useUndoRedo, QuickActionsBar, ref focus chaining & research links
  */
 
 import React, { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
@@ -23,12 +21,14 @@ import {
   Share,
   KeyboardAvoidingView,
   Platform,
-  Linking,
-  Alert
+  Linking
 } from 'react-native';
 import { HardGoodsCategory, HardGoodsItem } from '../types/hardgoods';
+import { RoleMode, ShooterManifest, MonitorQueueItem, ManifestAuditStatus } from '../types/ingestion';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import UndoRedoBar from './UndoRedoBar';
+import ShooterRoleView from './ShooterRoleView';
+import MonitorRoleView from './MonitorRoleView';
 
 // Seed lists for consistent terminology dropdown options
 const INITIAL_CONDITIONS = ['New', 'Used', 'Damaged'];
@@ -92,6 +92,51 @@ const INITIAL_ITEM = (): Partial<HardGoodsItem> => ({
 });
 
 /**
+ * RoleSelectorBar
+ * Top selector allowing smooth switching between Form View, Shooter Role, and Monitor Role.
+ */
+const RoleSelectorBar = memo(({
+  activeRole,
+  onSelectRole,
+  monitorCount
+}: {
+  activeRole: RoleMode;
+  onSelectRole: (role: RoleMode) => void;
+  monitorCount: number;
+}) => {
+  return (
+    <View style={styles.roleSelectorBar}>
+      <TouchableOpacity
+        style={[styles.roleBtn, activeRole === 'Form' && styles.roleBtnActive]}
+        onPress={() => onSelectRole('Form')}
+      >
+        <Text style={[styles.roleBtnText, activeRole === 'Form' && styles.roleBtnTextActive]}>
+          📋 Form View
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.roleBtn, activeRole === 'Shooter' && styles.roleBtnActive]}
+        onPress={() => onSelectRole('Shooter')}
+      >
+        <Text style={[styles.roleBtnText, activeRole === 'Shooter' && styles.roleBtnTextActive]}>
+          🎯 Shooter Role (Voice)
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.roleBtn, activeRole === 'Monitor' && styles.roleBtnActive]}
+        onPress={() => onSelectRole('Monitor')}
+      >
+        <Text style={[styles.roleBtnText, activeRole === 'Monitor' && styles.roleBtnTextActive]}>
+          🖥️ Monitor Role ({monitorCount})
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+/**
  * QuickActionsBar
  * Top shortcut grid for quick photo slot captures with visual completed badges.
  */
@@ -129,7 +174,42 @@ const QuickActionsBar = memo(({
 });
 
 export default function DynamicFormRouter() {
+  const [roleMode, setRoleMode] = useState<RoleMode>('Form');
   const [selectedCategory, setSelectedCategory] = useState<HardGoodsCategory>('Camera Gear');
+
+  // Monitor Audit Queue State
+  const [monitorQueue, setMonitorQueue] = useState<MonitorQueueItem[]>([
+    {
+      id: 'QITEM-1',
+      manifest: {
+        manifestId: 'MANIF-1001',
+        itemSKU: 'YYHL-DEMO-991',
+        timestamp: new Date().toISOString(),
+        vocalFields: {
+          title: 'Sony Alpha A7R V Camera Body',
+          brand: 'Sony',
+          modelNumber: 'ILCE-7RM5',
+          serialNumber: 'SN-4819201-US',
+          primaryCategory: 'Camera Gear',
+          condition: 'Used',
+          inspectionNotes: 'Verified clean optical element. Shutter count 1,200 actuations.'
+        },
+        photos: {
+          tagModel: 'file://hardlister/simulated_cam_tagModel.jpg',
+          front: 'file://hardlister/simulated_cam_front.jpg',
+          back: 'file://hardlister/simulated_cam_back.jpg'
+        },
+        highContrastTagActive: true,
+        isConfirmed: true,
+        itemData: {}
+      },
+      status: 'Pending Audit',
+      auditorNotes: 'Awaiting serial tag contrast inspection.',
+      contrastEnhanced: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ]);
 
   // Input Refs for soft keyboard focus chaining
   const brandRef = useRef<TextInput>(null);
@@ -138,7 +218,7 @@ export default function DynamicFormRouter() {
   const priceRef = useRef<TextInput>(null);
   const notesRef = useRef<TextInput>(null);
 
-  // Undo/Redo State Engine (Gleaned from TruCatLog)
+  // Undo/Redo State Engine
   const initialFormState = useMemo(() => INITIAL_ITEM(), []);
   const {
     value: formData,
@@ -195,13 +275,74 @@ export default function DynamicFormRouter() {
   const isTitleValid = !!(formData.title && formData.title.trim().length > 0);
   const isSerialValid = !!(formData.serialNumber && formData.serialNumber.trim().length > 0);
 
-  // 1. Build Numeric Abbreviation Map Indexing
+  // Handler for Shooter Manifest Confirmation
+  const handleShooterManifestConfirmed = useCallback((manifest: ShooterManifest) => {
+    const newQueueItem: MonitorQueueItem = {
+      id: 'QITEM-' + Math.floor(1000 + Math.random() * 9000),
+      manifest,
+      status: 'Pending Audit',
+      auditorNotes: 'Injected via Shooter Vocal Pipeline',
+      contrastEnhanced: manifest.highContrastTagActive,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    setMonitorQueue(prev => [newQueueItem, ...prev]);
+
+    // Apply vocal values to live form
+    setFormData(prev => ({
+      ...prev,
+      ...manifest.itemData
+    }), true);
+
+    showBanner(`Vocal manifest ${manifest.itemSKU} ingested into Monitor Audit Queue!`);
+    setRoleMode('Monitor');
+  }, [setFormData]);
+
+  // Handler for updating Monitor Audit Queue Status
+  const handleUpdateMonitorStatus = useCallback((id: string, newStatus: ManifestAuditStatus, notes?: string) => {
+    setMonitorQueue(prev => prev.map(item => {
+      if (item.id === id) {
+        return {
+          ...item,
+          status: newStatus,
+          auditorNotes: notes || item.auditorNotes,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return item;
+    }));
+    showBanner(`Manifest status updated to: ${newStatus}`);
+  }, []);
+
+  // Handler for loading a Monitor Queue Item into the Live Form
+  const handleLoadManifestToForm = useCallback((queueItem: MonitorQueueItem) => {
+    const itemData = queueItem.manifest.itemData;
+    setFormData(prev => ({
+      ...prev,
+      ...itemData,
+      itemNumber: queueItem.manifest.itemSKU,
+      title: queueItem.manifest.vocalFields.title,
+      brand: queueItem.manifest.vocalFields.brand,
+      modelNumber: queueItem.manifest.vocalFields.modelNumber,
+      serialNumber: queueItem.manifest.vocalFields.serialNumber,
+      primaryCategory: queueItem.manifest.vocalFields.primaryCategory,
+      condition: queueItem.manifest.vocalFields.condition,
+      inspectionNotes: queueItem.manifest.vocalFields.inspectionNotes,
+      photos: queueItem.manifest.photos
+    }), true);
+
+    showBanner(`Manifest ${queueItem.manifest.itemSKU} loaded into Form Router!`);
+    setRoleMode('Form');
+  }, [setFormData]);
+
+  // Indexing map
   const getIndexCode = (val: string, list: string[]): number => {
     const idx = list.indexOf(val);
     return idx !== -1 ? idx + 1 : list.length + 1;
   };
 
-  // 2. Automatically compute and update state combinations & returns policies
+  // State strings
   useEffect(() => {
     const itemName = formData.stateItemName || formData.title || formData.modelNumber || 'UNKNOWN-ITEM';
     const cond = formData.stateCondition || 'Used';
@@ -249,7 +390,7 @@ export default function DynamicFormRouter() {
     setFormData
   ]);
 
-  // Photo Naming Convention
+  // Photo Naming
   const getPhotoFilename = useCallback((slotName: string) => {
     const cleanItemName = (formData.stateItemName || formData.title || formData.modelNumber || 'ITEM')
       .replace(/[^a-zA-Z0-9]/g, '-');
@@ -257,7 +398,7 @@ export default function DynamicFormRouter() {
     return `${cleanItemName}_${cleanCond}_${slotName}.jpg`.toLowerCase();
   }, [formData.stateItemName, formData.title, formData.modelNumber, formData.stateCondition]);
 
-  // Market & Brand Research Handlers (Gleaned from TruCatLog)
+  // Market & Brand Research Handlers
   const handleMarketResearch = useCallback(() => {
     const query = [formData.brand, formData.title || formData.modelNumber, selectedCategory]
       .filter(Boolean)
@@ -278,7 +419,7 @@ export default function DynamicFormRouter() {
     Linking.openURL(`https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch`);
   }, [formData.brand, formData.modelNumber]);
 
-  // Add Custom Options "add+" Actions
+  // Add Custom Options
   const addNewCategory = () => {
     if (newCategoryVal.trim() && !categories.includes(newCategoryVal.trim())) {
       setCategories([...categories, newCategoryVal.trim()]);
@@ -392,10 +533,9 @@ export default function DynamicFormRouter() {
     }
   };
 
-  // Quick action toolbar capture trigger
+  // Quick action capture trigger
   const handleQuickCapture = useCallback((slotKey: PhotoSlotKey) => {
     if (formData.photos?.[slotKey]) {
-      // Toggle off if already captured
       updatePhoto(slotKey, undefined);
       showBanner(`Removed ${slotKey} photo.`);
     } else {
@@ -404,7 +544,7 @@ export default function DynamicFormRouter() {
     }
   }, [formData.photos, updatePhoto]);
 
-  // Export Manifest Strings (CSV & Markdown formats)
+  // Export Manifest Strings
   const markdownManifest = useMemo(() => {
     return `
 # HardLister Gear Manifest: ${formData.title || 'Untitled Listing'}
@@ -511,614 +651,638 @@ ${formData.descriptionVerbiage || 'No description written.'}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={64}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.headerTitle}>HardLister High-Precision Manifest</Text>
+      {roleMode === 'Shooter' ? (
+        <ShooterRoleView
+          initialCategory={selectedCategory}
+          onManifestConfirmed={handleShooterManifestConfirmed}
+          onCancel={() => setRoleMode('Form')}
+        />
+      ) : roleMode === 'Monitor' ? (
+        <MonitorRoleView
+          queueItems={monitorQueue}
+          onUpdateStatus={handleUpdateMonitorStatus}
+          onLoadManifestToForm={handleLoadManifestToForm}
+          onClose={() => setRoleMode('Form')}
+        />
+      ) : (
+        <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.headerTitle}>HardLister High-Precision Manifest</Text>
 
-        {/* Persistent Status Banner messages */}
-        {bannerMessage && (
-          <View style={styles.bannerContainer}>
-            <Text style={styles.bannerText}>{bannerMessage}</Text>
-          </View>
-        )}
-
-        {/* Quick Actions Photo Grid Toolbar (Gleaned from TruCatLog) */}
-        <View style={styles.quickActionsContainer}>
-          <Text style={styles.quickActionsHeaderLabel}>Asset Photo Requirements Toolbar</Text>
-          <QuickActionsBar photos={photosState} onCapture={handleQuickCapture} />
-        </View>
-
-        {/* Universal Base Form Info */}
-        <View style={styles.card}>
-          <Text style={styles.sectionHeader}>Universal Identity Info</Text>
-
-          <Text style={styles.label}>Manifest Item # / SKU</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.itemNumber}
-            onChangeText={(val) => updateField('itemNumber', val)}
+          {/* Role Selector Pipeline Bar */}
+          <RoleSelectorBar
+            activeRole={roleMode}
+            onSelectRole={setRoleMode}
+            monitorCount={monitorQueue.length}
           />
 
-          {/* Title Field with Character Warning & Inline Error (Gleaned from TruCatLog) */}
-          <View style={styles.fieldHeaderRow}>
-            <Text style={styles.label}>Listing Item Title *</Text>
-          </View>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Sony Alpha A7R V Camera Body"
-            placeholderTextColor="#4b5563"
-            value={formData.title || ''}
-            maxLength={80}
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => brandRef.current?.focus()}
-            onChangeText={(val) => {
-              updateField('title', val);
-              if (!formData.stateItemName || formData.stateItemName === formData.title) {
-                updateField('stateItemName', val);
-              }
-            }}
-          />
-          <View style={styles.fieldFooterRow}>
-            {!isTitleValid ? (
-              <Text style={styles.validationErrorText}>⚠️ Title is required to save</Text>
-            ) : <View />}
-            <Text style={[
-              styles.charCountText,
-              titleLength >= 68 && { color: '#fbbf24' },
-              titleLength >= 80 && { color: '#f87171' }
-            ]}>
-              {titleLength}/80
-            </Text>
-          </View>
-
-          {/* Brand & Model Row with Research Links & Ref Chaining (Gleaned from TruCatLog) */}
-          <View style={styles.row}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <View style={styles.labelHeaderRow}>
-                <Text style={styles.label}>Brand *</Text>
-                <TouchableOpacity onPress={handleLabelResearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={styles.researchLinkText}>🔍 Label Research</Text>
-                </TouchableOpacity>
-              </View>
-              <TextInput
-                ref={brandRef}
-                style={styles.input}
-                placeholder="Sony, DeWalt, etc"
-                placeholderTextColor="#4b5563"
-                value={formData.brand || ''}
-                maxLength={65}
-                returnKeyType="next"
-                blurOnSubmit={false}
-                onSubmitEditing={() => modelRef.current?.focus()}
-                onChangeText={(val) => updateField('brand', val)}
-              />
-              <View style={styles.fieldFooterRow}>
-                <View />
-                <Text style={[
-                  styles.charCountText,
-                  brandLength >= 55 && { color: '#fbbf24' },
-                  brandLength >= 65 && { color: '#f87171' }
-                ]}>
-                  {brandLength}/65
-                </Text>
-              </View>
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Model / Part *</Text>
-              <TextInput
-                ref={modelRef}
-                style={styles.input}
-                placeholder="e.g., ILCE-7RM5"
-                placeholderTextColor="#4b5563"
-                value={formData.modelNumber || ''}
-                returnKeyType="next"
-                blurOnSubmit={false}
-                onSubmitEditing={() => serialRef.current?.focus()}
-                onChangeText={(val) => updateField('modelNumber', val)}
-              />
-            </View>
-          </View>
-
-          {/* Serial Number Input with Ref Chaining and Validation */}
-          <Text style={styles.label}>Serial Number *</Text>
-          <TextInput
-            ref={serialRef}
-            style={styles.input}
-            placeholder="Mandatory serial number tracking"
-            placeholderTextColor="#4b5563"
-            value={formData.serialNumber || ''}
-            returnKeyType="next"
-            blurOnSubmit={false}
-            onSubmitEditing={() => priceRef.current?.focus()}
-            onChangeText={(val) => updateField('serialNumber', val)}
-          />
-          {!isSerialValid && (
-            <Text style={styles.validationErrorText}>⚠️ Mandatory serial tracking required</Text>
-          )}
-
-          <Text style={styles.label}>Select Category *</Text>
-          <View style={styles.categoryBadgeRow}>
-            {categories.map((cat) => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.categoryBadge, selectedCategory === cat && styles.categoryBadgeSelected]}
-                onPress={() => {
-                  setSelectedCategory(cat);
-                  updateField('primaryCategory', cat, true);
-                }}
-              >
-                <Text style={[styles.categoryBadgeText, selectedCategory === cat && styles.categoryBadgeTextSelected]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Add Category dynamic Option */}
-          <View style={styles.addCustomOptionRow}>
-            <TextInput
-              style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
-              placeholder="add+ new category"
-              placeholderTextColor="#4b5563"
-              value={newCategoryVal}
-              onChangeText={setNewCategoryVal}
-            />
-            <TouchableOpacity style={styles.addCustomBtn} onPress={addNewCategory}>
-              <Text style={styles.addCustomBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Dynamic Five-Part Consistent State Segment Form */}
-        <View style={[styles.card, { marginTop: 16 }]}>
-          <Text style={styles.sectionHeader}>Durable State & Terminology Mapping</Text>
-          <Text style={styles.helperText}>
-            Enforces standard, consistent listing terms. Format: ITEM NAME:CONDITION:OPERATIONAL STATE:COMPONENT STATE:PACKAGING METHOD
-          </Text>
-
-          {/* Part 1: Item Name */}
-          <Text style={styles.label}>1. Item Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., Sony-A7R-V"
-            value={formData.stateItemName || ''}
-            onChangeText={(val) => updateField('stateItemName', val)}
-          />
-
-          {/* Part 2: Condition */}
-          <Text style={styles.label}>2. Condition Dropdown</Text>
-          <View style={styles.customPickerRow}>
-            {conditions.map((cond) => (
-              <TouchableOpacity
-                key={cond}
-                style={[styles.pickerOption, formData.stateCondition === cond && styles.pickerOptionSelected]}
-                onPress={() => updateField('stateCondition', cond, true)}
-              >
-                <Text style={[styles.pickerOptionText, formData.stateCondition === cond && styles.pickerOptionTextSelected]}>
-                  {cond}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.addCustomOptionRow}>
-            <TextInput
-              style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
-              placeholder="add+ custom condition"
-              placeholderTextColor="#4b5563"
-              value={newConditionVal}
-              onChangeText={setNewConditionVal}
-            />
-            <TouchableOpacity style={styles.addCustomBtn} onPress={addNewCondition}>
-              <Text style={styles.addCustomBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Part 3: Operational State */}
-          <Text style={styles.label}>3. Operational State (Review Date Status)</Text>
-          <View style={styles.customPickerRow}>
-            {operationalStates.map((op) => (
-              <TouchableOpacity
-                key={op}
-                style={[styles.pickerOption, formData.stateOperationalState === op && styles.pickerOptionSelected]}
-                onPress={() => updateField('stateOperationalState', op, true)}
-              >
-                <Text style={[styles.pickerOptionText, formData.stateOperationalState === op && styles.pickerOptionTextSelected]}>
-                  {op}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.addCustomOptionRow}>
-            <TextInput
-              style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
-              placeholder="add+ operational status"
-              placeholderTextColor="#4b5563"
-              value={newOpStateVal}
-              onChangeText={setNewOpStateVal}
-            />
-            <TouchableOpacity style={styles.addCustomBtn} onPress={addNewOpState}>
-              <Text style={styles.addCustomBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Part 4: Component State */}
-          <Text style={styles.label}>4. Component State (Cables, accessories, missing parts?)</Text>
-          <View style={styles.customPickerRow}>
-            {componentStates.map((comp) => (
-              <TouchableOpacity
-                key={comp}
-                style={[styles.pickerOption, formData.stateComponentState === comp && styles.pickerOptionSelected]}
-                onPress={() => updateField('stateComponentState', comp, true)}
-              >
-                <Text style={[styles.pickerOptionText, formData.stateComponentState === comp && styles.pickerOptionTextSelected]}>
-                  {comp}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.addCustomOptionRow}>
-            <TextInput
-              style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
-              placeholder="add+ component state"
-              placeholderTextColor="#4b5563"
-              value={newCompStateVal}
-              onChangeText={setNewCompStateVal}
-            />
-            <TouchableOpacity style={styles.addCustomBtn} onPress={addNewCompState}>
-              <Text style={styles.addCustomBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Part 5: Packaging Method */}
-          <Text style={styles.label}>5. Packaging Method (Original or additional shipping box?)</Text>
-          <View style={styles.customPickerRow}>
-            {packagingMethods.map((pkg) => (
-              <TouchableOpacity
-                key={pkg}
-                style={[styles.pickerOption, formData.statePackagingMethod === pkg && styles.pickerOptionSelected]}
-                onPress={() => updateField('statePackagingMethod', pkg, true)}
-              >
-                <Text style={[styles.pickerOptionText, formData.statePackagingMethod === pkg && styles.pickerOptionTextSelected]}>
-                  {pkg}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={styles.addCustomOptionRow}>
-            <TextInput
-              style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
-              placeholder="add+ packaging method"
-              placeholderTextColor="#4b5563"
-              value={newPkgMethodVal}
-              onChangeText={setNewPkgMethodVal}
-            />
-            <TouchableOpacity style={styles.addCustomBtn} onPress={addNewPkgMethod}>
-              <Text style={styles.addCustomBtnText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Consolidated Terminal Outputs */}
-          <View style={styles.outputBox}>
-            <Text style={styles.outputLabel}>CONSOLIDATED STATE STRING:</Text>
-            <Text style={styles.outputText} numberOfLines={2}>{formData.consolidatedStateString}</Text>
-
-            <Text style={[styles.outputLabel, { marginTop: 10 }]}>NUMERIC REPRESENTATION CODE:</Text>
-            <Text style={styles.outputText} numberOfLines={2}>{formData.numericStateCode}</Text>
-            <Text style={styles.legendText}>
-              Legend Index Mapping: Condition ({conditions.indexOf(formData.stateCondition || 'Used') + 1}),
-              Operational ({operationalStates.indexOf(formData.stateOperationalState || 'Working') + 1}),
-              Component ({componentStates.indexOf(formData.stateComponentState || 'Complete') + 1}),
-              Packaging ({packagingMethods.indexOf(formData.statePackagingMethod || 'Original Box') + 1})
-            </Text>
-          </View>
-
-          {/* No Returns Policy Banner indicator if Damaged */}
-          {formData.noReturnsPolicy ? (
-            <View style={styles.noReturnBanner}>
-              <Text style={styles.noReturnBannerTitle}>⚠️ STRICT NO RETURNS ENFORCED</Text>
-              <Text style={styles.noReturnBannerBody}>
-                This item state specifies parts, damages, or status unknown condition. The listing policy automatically locks to: "No Returns".
-              </Text>
-            </View>
-          ) : (
-            <View style={[styles.noReturnBanner, { backgroundColor: '#1b4332', borderColor: '#2d6a4f' }]}>
-              <Text style={[styles.noReturnBannerTitle, { color: '#52b788' }]}>✅ STANDARD RETURNS POLICIES APPLY</Text>
-              <Text style={styles.noReturnBannerBody}>
-                This item is marked as functioning safely. Standard listing return policies are enabled.
-              </Text>
+          {/* Persistent Status Banner messages */}
+          {bannerMessage && (
+            <View style={styles.bannerContainer}>
+              <Text style={styles.bannerText}>{bannerMessage}</Text>
             </View>
           )}
-        </View>
 
-        {/* Interactive Photo Requirements Slots Section */}
-        <View style={[styles.card, { marginTop: 16 }]}>
-          <Text style={styles.sectionHeader}>Interactive Asset Verification Slots</Text>
-          <Text style={styles.helperText}>
-            Enforces high physical presentation criteria. Required photos must have valid uploads or captures before terminal sync.
-          </Text>
+          {/* Quick Actions Photo Grid Toolbar */}
+          <View style={styles.quickActionsContainer}>
+            <Text style={styles.quickActionsHeaderLabel}>Asset Photo Requirements Toolbar</Text>
+            <QuickActionsBar photos={photosState} onCapture={handleQuickCapture} />
+          </View>
 
-          {QUICK_PHOTO_ACTIONS.map((slot) => {
-            const slotKey = slot.key;
-            const hasPhoto = !!formData.photos?.[slotKey];
-            const filename = getPhotoFilename(slotKey);
-            const isTag = slotKey === 'tagModel';
+          {/* Universal Base Form Info */}
+          <View style={styles.card}>
+            <Text style={styles.sectionHeader}>Universal Identity Info</Text>
 
-            return (
-              <View key={slotKey} style={styles.photoSlotCard}>
-                <View style={styles.photoSlotHeader}>
-                  <View style={styles.row}>
-                    <Text style={styles.photoSlotLabel}>
-                      {slot.label} Photo {slot.required ? '(REQUIRED)' : ''}
-                    </Text>
-                    {hasPhoto && <Text style={styles.checkIcon}>✅ Captured</Text>}
-                  </View>
-                  <Text style={styles.photoSlotDesc}>
-                    {slotKey === 'front' && 'Primary thumbnail presentation angle.'}
-                    {slotKey === 'back' && 'Show physical ports, power lines, labels cleanly.'}
-                    {slotKey === 'lSide' && 'Optional: Useful for structural wear checks.'}
-                    {slotKey === 'rSide' && 'Optional: Useful for physical port inspections.'}
-                    {slotKey === 'top' && 'Highly Optional: Captures user control surface plates.'}
-                    {slotKey === 'bottom' && 'Highly Optional: Captures serial label and base pads.'}
-                    {slotKey === 'tagModel' && 'Authenticates serial string plates cleanly.'}
+            <Text style={styles.label}>Manifest Item # / SKU</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.itemNumber}
+              onChangeText={(val) => updateField('itemNumber', val)}
+            />
+
+            {/* Title Field */}
+            <View style={styles.fieldHeaderRow}>
+              <Text style={styles.label}>Listing Item Title *</Text>
+            </View>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., Sony Alpha A7R V Camera Body"
+              placeholderTextColor="#4b5563"
+              value={formData.title || ''}
+              maxLength={80}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => brandRef.current?.focus()}
+              onChangeText={(val) => {
+                updateField('title', val);
+                if (!formData.stateItemName || formData.stateItemName === formData.title) {
+                  updateField('stateItemName', val);
+                }
+              }}
+            />
+            <View style={styles.fieldFooterRow}>
+              {!isTitleValid ? (
+                <Text style={styles.validationErrorText}>⚠️ Title is required to save</Text>
+              ) : <View />}
+              <Text style={[
+                styles.charCountText,
+                titleLength >= 68 && { color: '#fbbf24' },
+                titleLength >= 80 && { color: '#f87171' }
+              ]}>
+                {titleLength}/80
+              </Text>
+            </View>
+
+            {/* Brand & Model Row */}
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <View style={styles.labelHeaderRow}>
+                  <Text style={styles.label}>Brand *</Text>
+                  <TouchableOpacity onPress={handleLabelResearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.researchLinkText}>🔍 Label Research</Text>
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  ref={brandRef}
+                  style={styles.input}
+                  placeholder="Sony, DeWalt, etc"
+                  placeholderTextColor="#4b5563"
+                  value={formData.brand || ''}
+                  maxLength={65}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => modelRef.current?.focus()}
+                  onChangeText={(val) => updateField('brand', val)}
+                />
+                <View style={styles.fieldFooterRow}>
+                  <View />
+                  <Text style={[
+                    styles.charCountText,
+                    brandLength >= 55 && { color: '#fbbf24' },
+                    brandLength >= 65 && { color: '#f87171' }
+                  ]}>
+                    {brandLength}/65
                   </Text>
                 </View>
-
-                {isTag && (
-                  <View style={styles.highContrastControls}>
-                    <Text style={[styles.legendText, { color: '#38bdf8', marginBottom: 6 }]}>
-                      💡 Tip: Contrast adjust on physical capture is highly recommended for scanning faded plates.
-                    </Text>
-                    <TouchableOpacity
-                      style={[styles.contrastBtn, tagPhotoHighContrast && styles.contrastBtnActive]}
-                      onPress={() => setTagPhotoHighContrast(!tagPhotoHighContrast)}
-                    >
-                      <Text style={styles.contrastBtnText}>
-                        {tagPhotoHighContrast ? '🔵 High Contrast Active (+200% Clarity)' : '⚪ Click to Apply Contrast Boost'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {hasPhoto ? (
-                  <View style={[styles.photoPreviewBox, isTag && tagPhotoHighContrast && styles.highContrastPreview]}>
-                    <Text style={styles.photoUriText}>📷 Attached File: {filename}</Text>
-                    <TouchableOpacity
-                      style={styles.removePhotoBtn}
-                      onPress={() => updatePhoto(slotKey, undefined)}
-                    >
-                      <Text style={styles.removePhotoBtnText}>Delete Photo</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.photoPlaceholderBox}>
-                    <Text style={styles.photoPlaceholderText}>No image file attached</Text>
-                    <View style={styles.row}>
-                      <TouchableOpacity
-                        style={styles.photoActionBtn}
-                        onPress={() => updatePhoto(slotKey, `file://hardlister/simulated_cam_${slotKey}.jpg`)}
-                      >
-                        <Text style={styles.photoActionBtnText}>📸 Simulate Camera</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.photoActionBtn, { backgroundColor: '#334155' }]}
-                        onPress={() => updatePhoto(slotKey, `file://hardlister/uploaded_file_${slotKey}.jpg`)}
-                      >
-                        <Text style={styles.photoActionBtnText}>📁 Upload Slot</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
               </View>
-            );
-          })}
-        </View>
 
-        {/* AI Spec Scan and Auto-Pricing Agent */}
-        <View style={[styles.card, { marginTop: 16, borderColor: '#4f6ef7', borderWidth: 1 }]}>
-          <View style={styles.row}>
-            <Text style={[styles.sectionHeader, { color: '#6366f1' }]}>🤖 AI Agent Pricing & Specs Assistant</Text>
-          </View>
-          <Text style={styles.helperText}>
-            Retrieves current Web/eBay/Amazon estimated new/used pricing metrics, shipping dimensions, and custom technical specification copy text automatically.
-          </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Model / Part *</Text>
+                <TextInput
+                  ref={modelRef}
+                  style={styles.input}
+                  placeholder="e.g., ILCE-7RM5"
+                  placeholderTextColor="#4b5563"
+                  value={formData.modelNumber || ''}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => serialRef.current?.focus()}
+                  onChangeText={(val) => updateField('modelNumber', val)}
+                />
+              </View>
+            </View>
 
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: '#4f6ef7', marginTop: 10 }]}
-            onPress={triggerAiScan}
-            disabled={aiLoading}
-          >
-            {aiLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.actionButtonText}>Query AI Pricing & Logistics Matrix</Text>
+            {/* Serial Number Input */}
+            <Text style={styles.label}>Serial Number *</Text>
+            <TextInput
+              ref={serialRef}
+              style={styles.input}
+              placeholder="Mandatory serial number tracking"
+              placeholderTextColor="#4b5563"
+              value={formData.serialNumber || ''}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => priceRef.current?.focus()}
+              onChangeText={(val) => updateField('serialNumber', val)}
+            />
+            {!isSerialValid && (
+              <Text style={styles.validationErrorText}>⚠️ Mandatory serial tracking required</Text>
             )}
-          </TouchableOpacity>
 
-          {aiData && (
-            <View style={styles.aiResultContainer}>
-              <Text style={styles.aiHeader}>AI DISCOVERED LOGISTICS MAP:</Text>
+            <Text style={styles.label}>Select Category *</Text>
+            <View style={styles.categoryBadgeRow}>
+              {categories.map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.categoryBadge, selectedCategory === cat && styles.categoryBadgeSelected]}
+                  onPress={() => {
+                    setSelectedCategory(cat);
+                    updateField('primaryCategory', cat, true);
+                  }}
+                >
+                  <Text style={[styles.categoryBadgeText, selectedCategory === cat && styles.categoryBadgeTextSelected]}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-              <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.aiLabel}>Estimated Brand-New Price</Text>
-                  <Text style={styles.aiValue}>${aiData.newPrice}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aiLabel}>Estimated Used Price</Text>
-                  <Text style={styles.aiValue}>${aiData.usedPrice}</Text>
-                </View>
-              </View>
-
-              <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={styles.aiLabel}>Est Shipping Weight</Text>
-                  <Text style={styles.aiValue}>{aiData.weight}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.aiLabel}>Est Dimensions Envelope</Text>
-                  <Text style={styles.aiValue}>{aiData.dims}</Text>
-                </View>
-              </View>
-
-              <Text style={styles.aiLabel}>Draft Technical Listing Copy</Text>
-              <Text style={styles.aiDescriptionText} numberOfLines={6}>{aiData.description}</Text>
-
-              <TouchableOpacity style={styles.loadAiBtn} onPress={loadAiData}>
-                <Text style={styles.loadAiBtnText}>Apply AI Research to Live Manifest Form</Text>
+            {/* Add Category dynamic Option */}
+            <View style={styles.addCustomOptionRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
+                placeholder="add+ new category"
+                placeholderTextColor="#4b5563"
+                value={newCategoryVal}
+                onChangeText={setNewCategoryVal}
+              />
+              <TouchableOpacity style={styles.addCustomBtn} onPress={addNewCategory}>
+                <Text style={styles.addCustomBtnText}>Add</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Dynamic Five-Part Consistent State Segment Form */}
+          <View style={[styles.card, { marginTop: 16 }]}>
+            <Text style={styles.sectionHeader}>Durable State & Terminology Mapping</Text>
+            <Text style={styles.helperText}>
+              Enforces standard, consistent listing terms. Format: ITEM NAME:CONDITION:OPERATIONAL STATE:COMPONENT STATE:PACKAGING METHOD
+            </Text>
+
+            {/* Part 1: Item Name */}
+            <Text style={styles.label}>1. Item Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., Sony-A7R-V"
+              value={formData.stateItemName || ''}
+              onChangeText={(val) => updateField('stateItemName', val)}
+            />
+
+            {/* Part 2: Condition */}
+            <Text style={styles.label}>2. Condition Dropdown</Text>
+            <View style={styles.customPickerRow}>
+              {conditions.map((cond) => (
+                <TouchableOpacity
+                  key={cond}
+                  style={[styles.pickerOption, formData.stateCondition === cond && styles.pickerOptionSelected]}
+                  onPress={() => updateField('stateCondition', cond, true)}
+                >
+                  <Text style={[styles.pickerOptionText, formData.stateCondition === cond && styles.pickerOptionTextSelected]}>
+                    {cond}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.addCustomOptionRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
+                placeholder="add+ custom condition"
+                placeholderTextColor="#4b5563"
+                value={newConditionVal}
+                onChangeText={setNewConditionVal}
+              />
+              <TouchableOpacity style={styles.addCustomBtn} onPress={addNewCondition}>
+                <Text style={styles.addCustomBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Part 3: Operational State */}
+            <Text style={styles.label}>3. Operational State (Review Date Status)</Text>
+            <View style={styles.customPickerRow}>
+              {operationalStates.map((op) => (
+                <TouchableOpacity
+                  key={op}
+                  style={[styles.pickerOption, formData.stateOperationalState === op && styles.pickerOptionSelected]}
+                  onPress={() => updateField('stateOperationalState', op, true)}
+                >
+                  <Text style={[styles.pickerOptionText, formData.stateOperationalState === op && styles.pickerOptionTextSelected]}>
+                    {op}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.addCustomOptionRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
+                placeholder="add+ operational status"
+                placeholderTextColor="#4b5563"
+                value={newOpStateVal}
+                onChangeText={setNewOpStateVal}
+              />
+              <TouchableOpacity style={styles.addCustomBtn} onPress={addNewOpState}>
+                <Text style={styles.addCustomBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Part 4: Component State */}
+            <Text style={styles.label}>4. Component State (Cables, accessories, missing parts?)</Text>
+            <View style={styles.customPickerRow}>
+              {componentStates.map((comp) => (
+                <TouchableOpacity
+                  key={comp}
+                  style={[styles.pickerOption, formData.stateComponentState === comp && styles.pickerOptionSelected]}
+                  onPress={() => updateField('stateComponentState', comp, true)}
+                >
+                  <Text style={[styles.pickerOptionText, formData.stateComponentState === comp && styles.pickerOptionTextSelected]}>
+                    {comp}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.addCustomOptionRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
+                placeholder="add+ component state"
+                placeholderTextColor="#4b5563"
+                value={newCompStateVal}
+                onChangeText={setNewCompStateVal}
+              />
+              <TouchableOpacity style={styles.addCustomBtn} onPress={addNewCompState}>
+                <Text style={styles.addCustomBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Part 5: Packaging Method */}
+            <Text style={styles.label}>5. Packaging Method (Original or additional shipping box?)</Text>
+            <View style={styles.customPickerRow}>
+              {packagingMethods.map((pkg) => (
+                <TouchableOpacity
+                  key={pkg}
+                  style={[styles.pickerOption, formData.statePackagingMethod === pkg && styles.pickerOptionSelected]}
+                  onPress={() => updateField('statePackagingMethod', pkg, true)}
+                >
+                  <Text style={[styles.pickerOptionText, formData.statePackagingMethod === pkg && styles.pickerOptionTextSelected]}>
+                    {pkg}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.addCustomOptionRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, height: 38, paddingVertical: 6 }]}
+                placeholder="add+ packaging method"
+                placeholderTextColor="#4b5563"
+                value={newPkgMethodVal}
+                onChangeText={setNewPkgMethodVal}
+              />
+              <TouchableOpacity style={styles.addCustomBtn} onPress={addNewPkgMethod}>
+                <Text style={styles.addCustomBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Consolidated Terminal Outputs */}
+            <View style={styles.outputBox}>
+              <Text style={styles.outputLabel}>CONSOLIDATED STATE STRING:</Text>
+              <Text style={styles.outputText} numberOfLines={2}>{formData.consolidatedStateString}</Text>
+
+              <Text style={[styles.outputLabel, { marginTop: 10 }]}>NUMERIC REPRESENTATION CODE:</Text>
+              <Text style={styles.outputText} numberOfLines={2}>{formData.numericStateCode}</Text>
+              <Text style={styles.legendText}>
+                Legend Index Mapping: Condition ({conditions.indexOf(formData.stateCondition || 'Used') + 1}),
+                Operational ({operationalStates.indexOf(formData.stateOperationalState || 'Working') + 1}),
+                Component ({componentStates.indexOf(formData.stateComponentState || 'Complete') + 1}),
+                Packaging ({packagingMethods.indexOf(formData.statePackagingMethod || 'Original Box') + 1})
+              </Text>
+            </View>
+
+            {/* No Returns Policy Banner */}
+            {formData.noReturnsPolicy ? (
+              <View style={styles.noReturnBanner}>
+                <Text style={styles.noReturnBannerTitle}>⚠️ STRICT NO RETURNS ENFORCED</Text>
+                <Text style={styles.noReturnBannerBody}>
+                  This item state specifies parts, damages, or status unknown condition. The listing policy automatically locks to: "No Returns".
+                </Text>
+              </View>
+            ) : (
+              <View style={[styles.noReturnBanner, { backgroundColor: '#1b4332', borderColor: '#2d6a4f' }]}>
+                <Text style={[styles.noReturnBannerTitle, { color: '#52b788' }]}>✅ STANDARD RETURNS POLICIES APPLY</Text>
+                <Text style={styles.noReturnBannerBody}>
+                  This item is marked as functioning safely. Standard listing return policies are enabled.
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Interactive Photo Requirements Slots Section */}
+          <View style={[styles.card, { marginTop: 16 }]}>
+            <Text style={styles.sectionHeader}>Interactive Asset Verification Slots</Text>
+            <Text style={styles.helperText}>
+              Enforces high physical presentation criteria. Required photos must have valid uploads or captures before terminal sync.
+            </Text>
+
+            {QUICK_PHOTO_ACTIONS.map((slot) => {
+              const slotKey = slot.key;
+              const hasPhoto = !!formData.photos?.[slotKey];
+              const filename = getPhotoFilename(slotKey);
+              const isTag = slotKey === 'tagModel';
+
+              return (
+                <View key={slotKey} style={styles.photoSlotCard}>
+                  <View style={styles.photoSlotHeader}>
+                    <View style={styles.row}>
+                      <Text style={styles.photoSlotLabel}>
+                        {slot.label} Photo {slot.required ? '(REQUIRED)' : ''}
+                      </Text>
+                      {hasPhoto && <Text style={styles.checkIcon}>✅ Captured</Text>}
+                    </View>
+                    <Text style={styles.photoSlotDesc}>
+                      {slotKey === 'front' && 'Primary thumbnail presentation angle.'}
+                      {slotKey === 'back' && 'Show physical ports, power lines, labels cleanly.'}
+                      {slotKey === 'lSide' && 'Optional: Useful for structural wear checks.'}
+                      {slotKey === 'rSide' && 'Optional: Useful for physical port inspections.'}
+                      {slotKey === 'top' && 'Highly Optional: Captures user control surface plates.'}
+                      {slotKey === 'bottom' && 'Highly Optional: Captures serial label and base pads.'}
+                      {slotKey === 'tagModel' && 'Authenticates serial string plates cleanly.'}
+                    </Text>
+                  </View>
+
+                  {isTag && (
+                    <View style={styles.highContrastControls}>
+                      <Text style={[styles.legendText, { color: '#38bdf8', marginBottom: 6 }]}>
+                        💡 Tip: Contrast adjust on physical capture is highly recommended for scanning faded plates.
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.contrastBtn, tagPhotoHighContrast && styles.contrastBtnActive]}
+                        onPress={() => setTagPhotoHighContrast(!tagPhotoHighContrast)}
+                      >
+                        <Text style={styles.contrastBtnText}>
+                          {tagPhotoHighContrast ? '🔵 High Contrast Active (+200% Clarity)' : '⚪ Click to Apply Contrast Boost'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {hasPhoto ? (
+                    <View style={[styles.photoPreviewBox, isTag && tagPhotoHighContrast && styles.highContrastPreview]}>
+                      <Text style={styles.photoUriText}>📷 Attached File: {filename}</Text>
+                      <TouchableOpacity
+                        style={styles.removePhotoBtn}
+                        onPress={() => updatePhoto(slotKey, undefined)}
+                      >
+                        <Text style={styles.removePhotoBtnText}>Delete Photo</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.photoPlaceholderBox}>
+                      <Text style={styles.photoPlaceholderText}>No image file attached</Text>
+                      <View style={styles.row}>
+                        <TouchableOpacity
+                          style={styles.photoActionBtn}
+                          onPress={() => updatePhoto(slotKey, `file://hardlister/simulated_cam_${slotKey}.jpg`)}
+                        >
+                          <Text style={styles.photoActionBtnText}>📸 Simulate Camera</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.photoActionBtn, { backgroundColor: '#334155' }]}
+                          onPress={() => updatePhoto(slotKey, `file://hardlister/uploaded_file_${slotKey}.jpg`)}
+                        >
+                          <Text style={styles.photoActionBtnText}>📁 Upload Slot</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* AI Spec Scan Assistant */}
+          <View style={[styles.card, { marginTop: 16, borderColor: '#4f6ef7', borderWidth: 1 }]}>
+            <View style={styles.row}>
+              <Text style={[styles.sectionHeader, { color: '#6366f1' }]}>🤖 AI Agent Pricing & Specs Assistant</Text>
+            </View>
+            <Text style={styles.helperText}>
+              Retrieves current Web/eBay/Amazon estimated new/used pricing metrics, shipping dimensions, and custom technical specification copy text automatically.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: '#4f6ef7', marginTop: 10 }]}
+              onPress={triggerAiScan}
+              disabled={aiLoading}
+            >
+              {aiLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.actionButtonText}>Query AI Pricing & Logistics Matrix</Text>
+              )}
+            </TouchableOpacity>
+
+            {aiData && (
+              <View style={styles.aiResultContainer}>
+                <Text style={styles.aiHeader}>AI DISCOVERED LOGISTICS MAP:</Text>
+
+                <View style={styles.row}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.aiLabel}>Estimated Brand-New Price</Text>
+                    <Text style={styles.aiValue}>${aiData.newPrice}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aiLabel}>Estimated Used Price</Text>
+                    <Text style={styles.aiValue}>${aiData.usedPrice}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.row}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text style={styles.aiLabel}>Est Shipping Weight</Text>
+                    <Text style={styles.aiValue}>{aiData.weight}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aiLabel}>Est Dimensions Envelope</Text>
+                    <Text style={styles.aiValue}>{aiData.dims}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.aiLabel}>Draft Technical Listing Copy</Text>
+                <Text style={styles.aiDescriptionText} numberOfLines={6}>{aiData.description}</Text>
+
+                <TouchableOpacity style={styles.loadAiBtn} onPress={loadAiData}>
+                  <Text style={styles.loadAiBtnText}>Apply AI Research to Live Manifest Form</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Logistics, Pricing & Copywriting */}
+          <View style={[styles.card, { marginTop: 16 }]}>
+            <View style={styles.labelHeaderRow}>
+              <Text style={styles.sectionHeader}>Logistics, Pricing & Copywriting</Text>
+              <TouchableOpacity onPress={handleMarketResearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={styles.researchLinkText}>📈 Market Sold Comps</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.label}>Target Listed Price ($)</Text>
+                <TextInput
+                  ref={priceRef}
+                  style={styles.input}
+                  keyboardType="numeric"
+                  placeholder="e.g., 850"
+                  placeholderTextColor="#4b5563"
+                  value={formData.listedPrice ? String(formData.listedPrice) : ''}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => notesRef.current?.focus()}
+                  onChangeText={(val) => updateField('listedPrice', parseFloat(val) || 0)}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Researched New Price ($)</Text>
+                <TextInput
+                  style={styles.input}
+                  keyboardType="numeric"
+                  placeholder="e.g., 1299"
+                  placeholderTextColor="#4b5563"
+                  value={formData.researchNewPrice ? String(formData.researchNewPrice) : ''}
+                  onChangeText={(val) => updateField('researchNewPrice', parseFloat(val) || 0)}
+                />
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.label}>Est Shipping Weight</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., 4 lbs 12 oz"
+                  placeholderTextColor="#4b5563"
+                  value={formData.shippingWeight || ''}
+                  onChangeText={(val) => updateField('shippingWeight', val)}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Est Package Dimensions</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="e.g., 12 x 10 x 6 in"
+                  placeholderTextColor="#4b5563"
+                  value={formData.shippingDimensions || ''}
+                  onChangeText={(val) => updateField('shippingDimensions', val)}
+                />
+              </View>
+            </View>
+
+            <Text style={styles.label}>Listing Description / Copywriting Copy *</Text>
+            <TextInput
+              style={[styles.input, { height: 120, textAlignVertical: 'top' }]}
+              multiline
+              numberOfLines={6}
+              placeholder="Detailed verbiage describing the specific condition, accessories, and performance indices..."
+              placeholderTextColor="#4b5563"
+              value={formData.descriptionVerbiage || ''}
+              onChangeText={(val) => updateField('descriptionVerbiage', val)}
+            />
+
+            <Text style={styles.label}>Inspector Diagnostics / Physical Notes</Text>
+            <TextInput
+              ref={notesRef}
+              style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
+              multiline
+              numberOfLines={3}
+              placeholder="Fault ledgers, operational wear notes, physical scuffs..."
+              placeholderTextColor="#4b5563"
+              value={formData.inspectionNotes || ''}
+              onChangeText={(val) => updateField('inspectionNotes', val)}
+            />
+          </View>
+
+          {/* Conditional Sub-Category Elements */}
+          {selectedCategory === 'Camera Gear' && (
+            <View style={styles.sectionContainer}>
+              <Text style={styles.sectionHeader}>Gold-Standard Optics Calibration</Text>
+              <Text style={styles.label}>Shutter Count / Run-Hours</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="e.g., 14205"
+                placeholderTextColor="#4b5563"
+                onChangeText={(val) => updateField('shutterCountOrHours', parseInt(val) || 0)}
+              />
+            </View>
           )}
-        </View>
 
-        {/* Form Logistical Pricing & Specifications Inputs with Market Research Comps */}
-        <View style={[styles.card, { marginTop: 16 }]}>
-          <View style={styles.labelHeaderRow}>
-            <Text style={styles.sectionHeader}>Logistics, Pricing & Copywriting</Text>
-            <TouchableOpacity onPress={handleMarketResearch} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.researchLinkText}>📈 Market Sold Comps</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.row}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.label}>Target Listed Price ($)</Text>
-              <TextInput
-                ref={priceRef}
-                style={styles.input}
-                keyboardType="numeric"
-                placeholder="e.g., 850"
-                placeholderTextColor="#4b5563"
-                value={formData.listedPrice ? String(formData.listedPrice) : ''}
-                returnKeyType="next"
-                blurOnSubmit={false}
-                onSubmitEditing={() => notesRef.current?.focus()}
-                onChangeText={(val) => updateField('listedPrice', parseFloat(val) || 0)}
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Researched New Price ($)</Text>
+          {selectedCategory === 'Electronics' && (
+            <View style={styles.sectionContainer}>
+              <Text style={styles.sectionHeader}>Computing Hardware Environment</Text>
+              <Text style={styles.label}>Storage / Memory Profile</Text>
               <TextInput
                 style={styles.input}
-                keyboardType="numeric"
-                placeholder="e.g., 1299"
+                placeholder="e.g., 32GB RAM / 1TB SSD"
                 placeholderTextColor="#4b5563"
-                value={formData.researchNewPrice ? String(formData.researchNewPrice) : ''}
-                onChangeText={(val) => updateField('researchNewPrice', parseFloat(val) || 0)}
+                onChangeText={(val) => updateField('storageRamProfile', val)}
               />
             </View>
-          </View>
+          )}
 
-          <View style={styles.row}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.label}>Est Shipping Weight</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 4 lbs 12 oz"
-                placeholderTextColor="#4b5563"
-                value={formData.shippingWeight || ''}
-                onChangeText={(val) => updateField('shippingWeight', val)}
-              />
+          {/* Manifest Clipboard Export Terminal */}
+          <View style={[styles.card, { marginTop: 16, marginBottom: 24, backgroundColor: '#13151f', borderColor: '#475569' }]}>
+            <Text style={styles.sectionHeader}>📋 Manifest Clipboard Export Terminal</Text>
+            <Text style={styles.helperText}>
+              Transfer listing info seamlessly to high-speed spreadsheet rows or Markdown platforms.
+            </Text>
+
+            <View style={styles.row}>
+              <TouchableOpacity style={[styles.exportBtn, { backgroundColor: '#10b981' }]} onPress={shareMarkdown}>
+                <Text style={styles.exportBtnText}>Share Markdown (.MD)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.exportBtn, { backgroundColor: '#0ea5e9' }]} onPress={shareCsv}>
+                <Text style={styles.exportBtnText}>Share Tabular CSV (.CSV)</Text>
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Est Package Dimensions</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 12 x 10 x 6 in"
-                placeholderTextColor="#4b5563"
-                value={formData.shippingDimensions || ''}
-                onChangeText={(val) => updateField('shippingDimensions', val)}
-              />
-            </View>
-          </View>
 
-          <Text style={styles.label}>Listing Description / Copywriting Copy *</Text>
-          <TextInput
-            style={[styles.input, { height: 120, textAlignVertical: 'top' }]}
-            multiline
-            numberOfLines={6}
-            placeholder="Detailed verbiage describing the specific condition, accessories, and performance indices..."
-            placeholderTextColor="#4b5563"
-            value={formData.descriptionVerbiage || ''}
-            onChangeText={(val) => updateField('descriptionVerbiage', val)}
-          />
-
-          <Text style={styles.label}>Inspector Diagnostics / Physical Notes</Text>
-          <TextInput
-            ref={notesRef}
-            style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-            multiline
-            numberOfLines={3}
-            placeholder="Fault ledgers, operational wear notes, physical scuffs..."
-            placeholderTextColor="#4b5563"
-            value={formData.inspectionNotes || ''}
-            onChangeText={(val) => updateField('inspectionNotes', val)}
-          />
-        </View>
-
-        {/* Conditional Sub-Category Elements */}
-        {selectedCategory === 'Camera Gear' && (
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionHeader}>Gold-Standard Optics Calibration</Text>
-            <Text style={styles.label}>Shutter Count / Run-Hours</Text>
+            <Text style={styles.label}>Copy Preview Box (Markdown / Details):</Text>
             <TextInput
-              style={styles.input}
-              keyboardType="numeric"
-              placeholder="e.g., 14205"
-              placeholderTextColor="#4b5563"
-              onChangeText={(val) => updateField('shutterCountOrHours', parseInt(val) || 0)}
+              style={[styles.input, { height: 180, fontSize: 11, fontFamily: 'monospace', backgroundColor: '#090a0f', color: '#a5b4fc' }]}
+              multiline
+              editable={false}
+              value={markdownManifest}
             />
           </View>
-        )}
+        </ScrollView>
+      )}
 
-        {selectedCategory === 'Electronics' && (
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionHeader}>Computing Hardware Environment</Text>
-            <Text style={styles.label}>Storage / Memory Profile</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., 32GB RAM / 1TB SSD"
-              placeholderTextColor="#4b5563"
-              onChangeText={(val) => updateField('storageRamProfile', val)}
-            />
-          </View>
-        )}
-
-        {/* Manifest Data Importer/Exporter Clipboard Transfer Area */}
-        <View style={[styles.card, { marginTop: 16, marginBottom: 24, backgroundColor: '#13151f', borderColor: '#475569' }]}>
-          <Text style={styles.sectionHeader}>📋 Manifest Clipboard Export Terminal</Text>
-          <Text style={styles.helperText}>
-            Transfer listing info seamlessly to high-speed spreadsheet rows or Markdown platforms.
-          </Text>
-
-          <View style={styles.row}>
-            <TouchableOpacity style={[styles.exportBtn, { backgroundColor: '#10b981' }]} onPress={shareMarkdown}>
-              <Text style={styles.exportBtnText}>Share Markdown (.MD)</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.exportBtn, { backgroundColor: '#0ea5e9' }]} onPress={shareCsv}>
-              <Text style={styles.exportBtnText}>Share Tabular CSV (.CSV)</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.label}>Copy Preview Box (Markdown / Details):</Text>
-          <TextInput
-            style={[styles.input, { height: 180, fontSize: 11, fontFamily: 'monospace', backgroundColor: '#090a0f', color: '#a5b4fc' }]}
-            multiline
-            editable={false}
-            value={markdownManifest}
-          />
-        </View>
-      </ScrollView>
-
-      {/* Floating Sticky Undo/Redo History Bar (Gleaned from TruCatLog) */}
-      <UndoRedoBar
-        canUndo={canUndo}
-        canRedo={canRedo}
-        onUndo={undo}
-        onRedo={redo}
-        historyLength={historyLength}
-      />
+      {/* Floating Sticky Undo/Redo History Bar */}
+      {roleMode === 'Form' && (
+        <UndoRedoBar
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          historyLength={historyLength}
+        />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -1126,7 +1290,14 @@ ${formData.descriptionVerbiage || 'No description written.'}
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f1117' },
   content: { padding: 16 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#e8eaf6', marginBottom: 12, textAlign: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '800', color: '#e8eaf6', marginBottom: 10, textAlign: 'center' },
+
+  roleSelectorBar: { flexDirection: 'row', backgroundColor: '#131622', padding: 4, borderRadius: 10, marginBottom: 14, borderWidth: 1, borderColor: '#1e293b' },
+  roleBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
+  roleBtnActive: { backgroundColor: '#2563eb' },
+  roleBtnText: { color: '#94a3b8', fontSize: 11, fontWeight: '700' },
+  roleBtnTextActive: { color: '#ffffff' },
+
   card: { backgroundColor: '#1a1d27', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#2a2d3a' },
   label: { color: '#94a3b8', fontSize: 13, marginBottom: 4, marginTop: 10, fontWeight: '600' },
   labelHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 4 },
@@ -1139,7 +1310,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: '#0f1117', color: '#e8eaf6', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#2a2d3a', fontSize: 13 },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
 
-  // Quick Actions Grid (Gleaned from TruCatLog)
+  // Quick Actions Grid
   quickActionsContainer: { marginBottom: 14, backgroundColor: '#12141c', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1e293b' },
   quickActionsHeaderLabel: { color: '#818cf8', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 },
   quickActionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
